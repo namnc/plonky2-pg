@@ -6,8 +6,8 @@ use crate::curve::curve_types::{base_to_scalar, AffinePoint, Curve, CurveScalar}
 
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ECElGamalCipherText<C: Curve> {
-    pub R: C::AffinePoint,
-    pub C: C::AffinePoint,
+    pub r: AffinePoint<C>,
+    pub c: AffinePoint<C>,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -44,7 +44,7 @@ Bob cipher (C): 27ac77843effff5b723abe990e7175ba0c7659da0f5aec98421f0a89b78f2d82
 Output: Testing 123
 */
 
-pub fn enc_message<C: Curve>(M: C::AffinePoint, PK: ECElGamalPublicKey<C>) -> ECElGamalCipherText<C> {
+pub fn enc_message<C: Curve>(m: AffinePoint<C>, pk_point: ECElGamalPublicKey<C>) -> ECElGamalCipherText<C> {
     let (r, R) = {
         let mut r = C::ScalarField::rand();
         let mut R = (CurveScalar(r) * C::GENERATOR_PROJECTIVE).to_affine();
@@ -54,33 +54,32 @@ pub fn enc_message<C: Curve>(M: C::AffinePoint, PK: ECElGamalPublicKey<C>) -> EC
         }
         (r, R)
     };
-    let D = (CurveScalar(r) * PK).to_affine();
-    let C = D + M;
+    let D = (CurveScalar(r) * pk_point.0.to_projective()).to_affine();
+    let C = D.to_projective() + m.to_projective();
 
-    ECElGamalCipherText { R, C }
+    ECElGamalCipherText { r: R, c: C.to_affine() }
 }
 
 pub fn dec_message<C: Curve>(
-    ciphertext: ECElGamalCipherText,
-    sk: ECElGamalSecretKey
-) -> (bool, C::AffinePoint) {
-    let ECElGamalCipherText { R, C } = ciphertext;
+    ciphertext: ECElGamalCipherText<C>,
+    sk: ECElGamalSecretKey<C>
+) -> (bool, C::ScalarField) {
+    let ECElGamalCipherText { r: R, c: C } = ciphertext;
 
-    assert!(R.0.is_valid());
-    assert!(C.0.is_valid());
+    assert!(R.is_valid());
+    assert!(C.is_valid());
 
-    let D = (CurveScalar(sk) * R).to_affine();
-    let M = C - D;
+    let D = (CurveScalar(sk.0) * R.to_projective()).to_affine();
+    let M = C.to_projective() + D.to_projective().neg(); //(C + (-D))
 
-    (true, M)
+    (true, base_to_scalar::<C>(M.x))
 }
 
-#[cfg(test)]
 mod tests {
     use plonky2::field::secp256k1_scalar::Secp256K1Scalar;
     use plonky2::field::types::Sample;
-
-    use crate::curve::ecdsa::{enc_message, dec_message, ECElGamalSecretKey};
+    use crate::curve::curve_types::{base_to_scalar, AffinePoint, Curve, CurveScalar};
+    use crate::curve::ecelgamal::{ECElGamalSecretKey, enc_message, dec_message};
     use crate::curve::secp256k1::Secp256K1;
 
     #[test]
@@ -95,6 +94,6 @@ mod tests {
         let ciphertext = enc_message(M, PK);
         let (result, oM) = dec_message(ciphertext, sk);
         assert!(result);
-        assert!(M == oM);
+        assert!(msg == oM);
     }
 }
