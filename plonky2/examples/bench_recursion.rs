@@ -96,23 +96,28 @@ fn recursive_proof<
     InnerC: GenericConfig<D, F = F>,
     const D: usize,
 >(
-    inner: &ProofTuple<F, InnerC, D>,
+    inner1: &ProofTuple<F, InnerC, D>,
+    inner2: &ProofTuple<F, InnerC, D>,
     config: &CircuitConfig,
     min_degree_bits: Option<usize>,
 ) -> Result<ProofTuple<F, C, D>>
 where
     InnerC::Hasher: AlgebraicHasher<F>,
 {
-    let (inner_proof, inner_vd, inner_cd) = inner;
+    let (inner_proof1, inner_vd1, inner_cd1) = inner1;
+    let (inner_proof2, inner_vd2, inner_cd2) = inner2;
+
     let mut builder = CircuitBuilder::<F, D>::new(config.clone());
-    let pt = builder.add_virtual_proof_with_pis::<InnerC>(inner_cd);
+    let pt1 = builder.add_virtual_proof_with_pis::<InnerC>(inner_cd1);
+    let pt2 = builder.add_virtual_proof_with_pis::<InnerC>(inner_cd2);
 
     let inner_data = VerifierCircuitTarget {
-        constants_sigmas_cap: builder.add_virtual_cap(inner_cd.config.fri_config.cap_height),
+        constants_sigmas_cap: builder.add_virtual_cap(inner_cd1.config.fri_config.cap_height),
         circuit_digest: builder.add_virtual_hash(),
     };
 
-    builder.verify_proof::<InnerC>(&pt, &inner_data, inner_cd);
+    builder.verify_proof::<InnerC>(&pt1, &inner_data, inner_cd1);
+    builder.verify_proof::<InnerC>(&pt2, &inner_data, inner_cd2);
     builder.print_gate_counts(0);
 
     if let Some(min_degree_bits) = min_degree_bits {
@@ -129,8 +134,10 @@ where
     let data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();
-    pw.set_proof_with_pis_target(&pt, inner_proof);
-    pw.set_verifier_data_target(&inner_data, inner_vd);
+    pw.set_proof_with_pis_target(&pt1, inner_proof1);
+    pw.set_verifier_data_target(&inner_data, inner_vd1);
+    pw.set_proof_with_pis_target(&pt2, inner_proof2);
+    pw.set_verifier_data_target(&inner_data, inner_vd2);
 
     let mut timing = TimingTree::new("prove", Level::Debug);
     let proof = prove(&data.prover_only, &data.common, pw, &mut timing)?;
@@ -178,25 +185,58 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     type F = <C as GenericConfig<D>>::F;
 
     // Start with a dummy proof of specified size
-    let inner = dummy_proof::<F, C, D>(config, log2_inner_size)?;
-    let (_, _, cd) = &inner;
+    let inner1 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let (_, _, cd1) = &inner1;
     info!(
-        "Initial proof degree {} = 2^{}",
-        cd.degree(),
-        cd.degree_bits()
+        "Initial proof 1 degree {} = 2^{}",
+        cd1.degree(),
+        cd1.degree_bits()
+    );
+
+    let inner2 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let (_, _, cd2) = &inner2;
+    info!(
+        "Initial proof 2 degree {} = 2^{}",
+        cd2.degree(),
+        cd2.degree_bits()
     );
 
     // Recursively verify the proof
-    let middle = recursive_proof::<F, C, C, D>(&inner, config, None)?;
-    let (_, _, cd) = &middle;
+    let middle1 = recursive_proof::<F, C, C, D>(&inner1, &inner2, config, None)?;
+    let (_, _, cdm1) = &middle1;
     info!(
-        "Single recursion proof degree {} = 2^{}",
-        cd.degree(),
-        cd.degree_bits()
+        "Single recursion proof 1 degree {} = 2^{}",
+        cdm1.degree(),
+        cdm1.degree_bits()
+    );
+
+    let inner3 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let (_, _, cd3) = &inner3;
+    info!(
+        "Initial proof 3 degree {} = 2^{}",
+        cd3.degree(),
+        cd3.degree_bits()
+    );
+
+    let inner4 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let (_, _, cd4) = &inner4;
+    info!(
+        "Initial proof 4 degree {} = 2^{}",
+        cd4.degree(),
+        cd4.degree_bits()
+    );
+
+    // Recursively verify the proof
+    let middle2 = recursive_proof::<F, C, C, D>(&inner3, &inner4, config, None)?;
+    let (_, _, cdm2) = &middle2;
+    info!(
+        "Single recursion proof 2 degree {} = 2^{}",
+        cdm2.degree(),
+        cdm2.degree_bits()
     );
 
     // Add a second layer of recursion to shrink the proof size further
-    let outer = recursive_proof::<F, C, C, D>(&middle, config, None)?;
+    let outer = recursive_proof::<F, C, C, D>(&middle1, &middle2, config, None)?;
     let (proof, vd, cd) = &outer;
     info!(
         "Double recursion proof degree {} = 2^{}",
