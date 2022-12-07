@@ -28,19 +28,12 @@ template EvalGateConstraints() {
   signal input constraints[NUM_GATE_CONSTRAINTS()][2];
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
-  // ConstantGate { num_consts: 2 }
-  component c_Constant2 = Constant2();
-  c_Constant2.constants <== constants;
-  c_Constant2.wires <== wires;
-  c_Constant2.public_input_hash <== public_input_hash;
-  c_Constant2.constraints <== constraints;
-
   // PoseidonMdsGate(PhantomData<plonky2_field::goldilocks_field::GoldilocksField>)<WIDTH=12>
   component c_PoseidonMdsGate12 = PoseidonMdsGate12();
   c_PoseidonMdsGate12.constants <== constants;
   c_PoseidonMdsGate12.wires <== wires;
   c_PoseidonMdsGate12.public_input_hash <== public_input_hash;
-  c_PoseidonMdsGate12.constraints <== c_Constant2.out;
+  c_PoseidonMdsGate12.constraints <== constraints;
 
   // PublicInputGate
   component c_PublicInputGateLib = PublicInputGateLib();
@@ -113,23 +106,6 @@ template EvalGateConstraints() {
   c_Poseidon12.constraints <== c_RandomAccessB4C4E2.out;
   out <== c_Poseidon12.out;
 }
-template Constant2() {
-  signal input constants[NUM_OPENINGS_CONSTANTS()][2];
-  signal input wires[NUM_OPENINGS_WIRES()][2];
-  signal input public_input_hash[4];
-  signal input constraints[NUM_GATE_CONSTRAINTS()][2];
-  signal output out[NUM_GATE_CONSTRAINTS()][2];
-
-  signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
-
-  for (var i = 0; i < 2; i++) {
-    out[i] <== ConstraintPush()(constraints[i], filter, GlExtSub()(constants[3 + i], wires[i]));
-  }
-  for (var i = 2; i < NUM_GATE_CONSTRAINTS(); i++) {
-    out[i] <== constraints[i];
-  }
-}
 template PoseidonMdsGate12() {
   signal input constants[NUM_OPENINGS_CONSTANTS()][2];
   signal input wires[NUM_OPENINGS_WIRES()][2];
@@ -138,7 +114,7 @@ template PoseidonMdsGate12() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
 
   signal state[13][12][2][2];
   for (var r = 0; r < 12; r++) {
@@ -173,7 +149,7 @@ template PublicInputGateLib() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
 
   signal hashes[4][2];
   for (var i = 0; i < 4; i++) {
@@ -193,7 +169,7 @@ template BaseSum63() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
 
   component reduce = Reduce(63);
   reduce.alpha <== GlExt(2, 0)();
@@ -224,7 +200,7 @@ template LowDegreeInterpolation4() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
 
   var index = 0;
   signal altered_coeffs[16][2][2];
@@ -325,7 +301,7 @@ template ReducingExtension32() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(6, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
 
   var acc_start = 2 * 2;
   signal m[32][2][2];
@@ -353,7 +329,7 @@ template Reducing43() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(8, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(9, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(10, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(0, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(1, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(2, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(3, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(5, 0)(), constants[0]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[0]), GlExt(1, 0)())))))));
 
   var acc_start = 2 * 2;
   signal m[43][2][2];
@@ -382,7 +358,7 @@ template ArithmeticExtension10() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(7, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(9, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(10, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(8, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(9, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(10, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
 
   signal m[10][2][2];
   for (var i = 0; i < 10; i++) {
@@ -404,7 +380,7 @@ template Arithmetic20() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(7, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(8, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(10, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(7, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(9, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(10, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
 
   for (var i = 0; i < 20; i++) {
     out[i] <== ConstraintPush()(constraints[i], filter, GlExtSub()(wires[4 * i + 3], GlExtAdd()(GlExtMul()(GlExtMul()(wires[4 * i], wires[4 * i + 1]), constants[3 + 0]), GlExtMul()(wires[4 * i + 2], constants[3 + 1]))));
@@ -422,7 +398,7 @@ template MultiplicationExtension13() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(7, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(8, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(9, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
+  filter <== GlExtMul()(GlExtSub()(GlExt(7, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(8, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(10, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
 
   signal m[13][2][2];
   for (var i = 0; i < 13; i++) {
@@ -443,7 +419,7 @@ template RandomAccessB4C4E2() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(12, 0)(), constants[2]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[2]), GlExt(1, 0)()));
+  filter <== GlExtMul()(GlExtSub()(GlExt(7, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(8, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(9, 0)(), constants[1]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[1]), GlExt(1, 0)()))));
 
   var index = 0;
   signal acc[4][4][2];
@@ -494,7 +470,7 @@ template Poseidon12() {
   signal output out[NUM_GATE_CONSTRAINTS()][2];
 
   signal filter[2];
-  filter <== GlExtMul()(GlExtSub()(GlExt(11, 0)(), constants[2]), GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[2]), GlExt(1, 0)()));
+  filter <== GlExtMul()(GlExtSub()(GlExt(4294967295, 0)(), constants[2]), GlExt(1, 0)());
 
   var index = 0;
   out[index] <== ConstraintPush()(constraints[index], filter, GlExtMul()(wires[24], GlExtSub()(wires[24], GlExt(1, 0)())));
