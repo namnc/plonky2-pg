@@ -8,12 +8,12 @@ use crate::gates::gate::{GateInstance, GateRef};
 use crate::hash::hash_types::RichField;
 
 /// Placeholder value to indicate that a gate doesn't use a selector polynomial.
-pub(crate) const UNUSED_SELECTOR: usize = u32::MAX as usize;
+pub const UNUSED_SELECTOR: usize = u32::MAX as usize;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct SelectorsInfo {
-    pub(crate) selector_indices: Vec<usize>,
-    pub(crate) groups: Vec<Range<usize>>,
+pub struct SelectorsInfo {
+    pub selector_indices: Vec<usize>,
+    pub groups: Vec<Range<usize>>,
 }
 
 impl SelectorsInfo {
@@ -34,7 +34,7 @@ impl SelectorsInfo {
 ///         k
 ///     else
 ///         UNUSED_SELECTOR
-pub(crate) fn selector_polynomials<F: RichField + Extendable<D>, const D: usize>(
+pub fn selector_polynomials<F: RichField + Extendable<D>, const D: usize>(
     gates: &[GateRef<F, D>],
     instances: &[GateInstance<F, D>],
     max_degree: usize,

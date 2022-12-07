@@ -6,6 +6,9 @@
 use core::num::ParseIntError;
 use core::ops::RangeInclusive;
 use core::str::FromStr;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 
 use anyhow::{anyhow, Context as _, Result};
 use log::{info, Level, LevelFilter};
@@ -27,14 +30,13 @@ use plonky2::plonk::prover::prove;
 use plonky2::util::timing::TimingTree;
 use plonky2_field::extension::{Extendable, FieldExtension};
 use plonky2_field::goldilocks_field::GoldilocksField;
+use plonky2_util::log2_strict;
 use rand::rngs::OsRng;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::Serialize;
 use structopt::StructOpt;
 use plonky2::field::types::{Sample,Field};
-
-use crate::CommonCircuitData;
 
 type ProofTuple<F, C, const D: usize> = (
     ProofWithPublicInputs<F, C, D>,
@@ -795,7 +797,7 @@ pub fn generate_circom_verifier<
     println!("Generating Circom files ...");
 
     // Load template contract
-    let mut constants = std::fs::read_to_string("./src/template_constants.circom")
+    let mut constants = std::fs::read_to_string("./template_constants.circom")
         .expect("Something went wrong reading the file");
 
     let k_is = &common.k_is;
@@ -991,7 +993,7 @@ pub fn generate_circom_verifier<
     constants = constants.replace("$G_ARITY_BITS_4", &g.to_string());
 
     // Load gate template
-    let mut gates_lib = std::fs::read_to_string("./src/template_gates.circom")
+    let mut gates_lib = std::fs::read_to_string("./template_gates.circom")
         .expect("Something went wrong reading the file");
 
     let num_selectors = common.selectors_info.num_selectors();
