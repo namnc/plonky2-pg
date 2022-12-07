@@ -180,6 +180,7 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
     pw.set_hash_target(merkle_root_target, merkle_root_value);
     pw.set_target_arr(private_key_target, private_key);
     pw.set_target(rln_target, rln);
+    pw.set_target(new_rln_target, rln.sub_one());
     pw.set_target_arr(topic_target, topic);
     pw.set_target(
         public_key_index_target,
@@ -1205,11 +1206,11 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     // CREATE TREE WITH 2^n leaves
     let n = 1 << tree_height();
     let private_keys: Vec<[F;4]> = (0..n).map(|_| F::rand_array()).collect();
-    let rlns: Vec<F> = (0..n).map(|_| F::rand()).collect();
+    let rlns: Vec<F> = (0..n).map(|_| F::ONE).collect();
     let public_keys: Vec<Vec<F>> = private_keys
         .iter()
         .map(|&sk| {
-            PoseidonHash::hash_no_pad(&[sk, [F::ZERO; 4]].concat())
+            PoseidonHash::hash_no_pad(&[sk, [F::ZERO, F::ZERO, F::ZERO, F::ONE]].concat())
                 .elements
                 .to_vec()
         })
