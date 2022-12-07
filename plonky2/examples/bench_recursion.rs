@@ -1198,7 +1198,7 @@ fn test_serialization<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, 
     Ok(())
 }
 
-fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
+fn benchmark(config: &CircuitConfig, zk_config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = GoldilocksField;
@@ -1223,7 +1223,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let merkle_proof1 = merkle_tree.prove(1);
     let topic1: [GoldilocksField; 4] = F::rand_array();
     let nullifier1 = PoseidonHash::hash_no_pad(&[private_keys[1], topic1].concat()).elements;
-    let inner1 = semaphore_proof(config, private_keys[1], rlns[1], topic1, 1, merkle_proof1, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner1 = semaphore_proof(zk_config, private_keys[1], rlns[1], topic1, 1, merkle_proof1, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd1) = &inner1;
     info!(
         "Initial proof 1 degree {} = 2^{}",
@@ -1234,7 +1234,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let merkle_proof2 = merkle_tree.prove(2);
     let topic2: [GoldilocksField; 4] = F::rand_array();
     let nullifier2 = PoseidonHash::hash_no_pad(&[private_keys[2], topic2].concat()).elements;
-    let inner2 = semaphore_proof(config, private_keys[2], rlns[2], topic1, 2, merkle_proof2, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner2 = semaphore_proof(zk_config, private_keys[2], rlns[2], topic1, 2, merkle_proof2, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     //let inner2 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd2) = &inner2;
     info!(
@@ -1256,7 +1256,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let topic3: [GoldilocksField; 4] = F::rand_array();
     //let inner3 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let nullifier3 = PoseidonHash::hash_no_pad(&[private_keys[3], topic3].concat()).elements;
-    let inner3 = semaphore_proof(config, private_keys[3], rlns[3], topic1, 3, merkle_proof3, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner3 = semaphore_proof(zk_config, private_keys[3], rlns[3], topic1, 3, merkle_proof3, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd3) = &inner3;
     info!(
         "Initial proof 3 degree {} = 2^{}",
@@ -1267,7 +1267,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let merkle_proof4 = merkle_tree.prove(4);
     let topic4: [GoldilocksField; 4] = F::rand_array();
     let nullifier4 = PoseidonHash::hash_no_pad(&[private_keys[4], topic1].concat()).elements;
-    let inner4 = semaphore_proof(config, private_keys[4], rlns[4], topic4, 4, merkle_proof4, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner4 = semaphore_proof(zk_config, private_keys[4], rlns[4], topic4, 4, merkle_proof4, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     //let inner4 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd4) = &inner4;
     info!(
@@ -1345,6 +1345,7 @@ fn main() -> Result<()> {
     let threads = options.threads.unwrap_or(num_cpus..=num_cpus);
 
     let config = CircuitConfig::standard_recursion_config();
+    let zk_config = CircuitConfig::standard_recursion_zk_config();
     for log2_inner_size in options.size {
         // Since the `size` is most likely to be and unbounded range we make that the outer iterator.
         for threads in threads.clone() {
@@ -1359,7 +1360,7 @@ fn main() -> Result<()> {
                         num_cpus
                     );
                     // Run the benchmark
-                    benchmark(&config, log2_inner_size)
+                    benchmark(&config, &zk_config, log2_inner_size)
                 })?;
         }
     }
