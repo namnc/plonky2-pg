@@ -116,6 +116,7 @@ fn tree_height() -> usize {
 fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>(
     config: &CircuitConfig,
     private_key: [F; 4],
+    rln: F,
     topic: [F; 4],
     public_key_index: usize,
     merkle_proof: MerkleProof<F, PoseidonHash>,
@@ -131,6 +132,9 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
     let topic_target: [Target; 4] = builder.add_virtual_targets(4).try_into().unwrap();
     builder.register_public_inputs(&topic_target);
 
+    let new_leaf_target = builder.add_virtual_hash();
+    builder.register_public_inputs(&new_leaf_target.elements);
+
     // Merkle proof
     let merkle_proof_target = MerkleProofTarget {
         siblings: builder.add_virtual_hashes(tree_height()),
@@ -138,11 +142,15 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
 
     // Verify public key Merkle proof.
     let private_key_target: [Target; 4] = builder.add_virtual_targets(4).try_into().unwrap();
+    let rln_target = builder.add_virtual_target();
+    let new_rln_target = builder.add_virtual_target();
     let public_key_index_target = builder.add_virtual_target();
     let public_key_index_bits_target = builder.split_le(public_key_index_target, tree_height());
     let zero_target = builder.zero();
+    let neg_one_target = builder.neg_one();
+    
     builder.verify_merkle_proof::<PoseidonHash>(
-        [private_key_target, [zero_target; 4]].concat(),
+        [private_key_target, [zero_target, zero_target, zero_target, rln_target]].concat(),
         &public_key_index_bits_target,
         merkle_root_target,
         &merkle_proof_target,
@@ -155,11 +163,23 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
         builder.connect(nullifier_target.elements[i], should_be_nullifier_target.elements[i]);
     }
 
+    let should_be_new_rln_target = builder.add(rln_target, neg_one_target);
+    builder.connect(should_be_new_rln_target, new_rln_target);
+    builder.range_check(new_rln_target, 32);
+
+    // Check new leaf.
+    let should_be_new_leaf_target =
+        builder.hash_n_to_hash_no_pad::<PoseidonHash>([private_key_target, [zero_target, zero_target, zero_target, new_rln_target]].concat());
+    for i in 0..4 {
+        builder.connect(new_leaf_target.elements[i], should_be_new_leaf_target.elements[i]);
+    }
+
     let data = builder.build::<C>();
     let mut pw = PartialWitness::new();
 
     pw.set_hash_target(merkle_root_target, merkle_root_value);
     pw.set_target_arr(private_key_target, private_key);
+    pw.set_target(rln_target, rln);
     pw.set_target_arr(topic_target, topic);
     pw.set_target(
         public_key_index_target,
@@ -1184,8 +1204,8 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     
     // CREATE TREE WITH 2^n leaves
     let n = 1 << tree_height();
-
     let private_keys: Vec<[F;4]> = (0..n).map(|_| F::rand_array()).collect();
+    let rlns: Vec<F> = (0..n).map(|_| F::rand()).collect();
     let public_keys: Vec<Vec<F>> = private_keys
         .iter()
         .map(|&sk| {
@@ -1202,7 +1222,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let merkle_proof1 = merkle_tree.prove(1);
     let topic1: [GoldilocksField; 4] = F::rand_array();
     let nullifier1 = PoseidonHash::hash_no_pad(&[private_keys[1], topic1].concat()).elements;
-    let inner1 = semaphore_proof(config, private_keys[1], topic1, 1, merkle_proof1, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner1 = semaphore_proof(config, private_keys[1], rlns[1], topic1, 1, merkle_proof1, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd1) = &inner1;
     info!(
         "Initial proof 1 degree {} = 2^{}",
@@ -1213,7 +1233,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let merkle_proof2 = merkle_tree.prove(2);
     let topic2: [GoldilocksField; 4] = F::rand_array();
     let nullifier2 = PoseidonHash::hash_no_pad(&[private_keys[2], topic2].concat()).elements;
-    let inner2 = semaphore_proof(config, private_keys[2], topic1, 2, merkle_proof2, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner2 = semaphore_proof(config, private_keys[2], rlns[2], topic1, 2, merkle_proof2, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     //let inner2 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd2) = &inner2;
     info!(
@@ -1235,7 +1255,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let topic3: [GoldilocksField; 4] = F::rand_array();
     //let inner3 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let nullifier3 = PoseidonHash::hash_no_pad(&[private_keys[3], topic3].concat()).elements;
-    let inner3 = semaphore_proof(config, private_keys[3], topic1, 3, merkle_proof3, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner3 = semaphore_proof(config, private_keys[3], rlns[3], topic1, 3, merkle_proof3, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd3) = &inner3;
     info!(
         "Initial proof 3 degree {} = 2^{}",
@@ -1246,7 +1266,7 @@ fn benchmark(config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
     let merkle_proof4 = merkle_tree.prove(4);
     let topic4: [GoldilocksField; 4] = F::rand_array();
     let nullifier4 = PoseidonHash::hash_no_pad(&[private_keys[4], topic1].concat()).elements;
-    let inner4 = semaphore_proof(config, private_keys[4], topic4, 4, merkle_proof4, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner4 = semaphore_proof(config, private_keys[4], rlns[4], topic4, 4, merkle_proof4, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
     //let inner4 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd4) = &inner4;
     info!(
