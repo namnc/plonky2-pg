@@ -13,9 +13,10 @@ use std::path::Path;
 use anyhow::{anyhow, Context as _, Result};
 use log::{info, Level, LevelFilter};
 use maybe_rayon::rayon;
+use plonky2::field::types::{Field, Sample};
 use plonky2::gates::noop::NoopGate;
-use plonky2::hash::hash_types::{RichField, HashOutTarget, MerkleCapTarget, HashOut};
-use plonky2::hash::merkle_proofs::{MerkleProofTarget, MerkleProof};
+use plonky2::hash::hash_types::{HashOut, HashOutTarget, MerkleCapTarget, RichField};
+use plonky2::hash::merkle_proofs::{MerkleProof, MerkleProofTarget};
 use plonky2::hash::merkle_tree::MerkleTree;
 use plonky2::hash::poseidon::PoseidonHash;
 use plonky2::iop::target::Target;
@@ -24,7 +25,9 @@ use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2::plonk::circuit_data::{
     CircuitConfig, CommonCircuitData, VerifierCircuitTarget, VerifierOnlyCircuitData,
 };
-use plonky2::plonk::config::{AlgebraicHasher, GenericConfig, PoseidonGoldilocksConfig, Hasher, GenericHashOut};
+use plonky2::plonk::config::{
+    AlgebraicHasher, GenericConfig, GenericHashOut, Hasher, PoseidonGoldilocksConfig,
+};
 use plonky2::plonk::proof::{CompressedProofWithPublicInputs, ProofWithPublicInputs};
 use plonky2::plonk::prover::prove;
 use plonky2::util::timing::TimingTree;
@@ -36,7 +39,6 @@ use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::Serialize;
 use structopt::StructOpt;
-use plonky2::field::types::{Sample,Field};
 
 type ProofTuple<F, C, const D: usize> = (
     ProofWithPublicInputs<F, C, D>,
@@ -111,7 +113,7 @@ struct SemaphoreTargets {
 
 fn tree_height() -> usize {
     20
- }
+}
 
 fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>(
     config: &CircuitConfig,
@@ -120,11 +122,10 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
     topic: [F; 4],
     public_key_index: usize,
     merkle_proof: MerkleProof<F, PoseidonHash>,
-    merkle_root_value: HashOut<F> 
-) -> Result<ProofTuple<F, C, D>> {    
-    
+    merkle_root_value: HashOut<F>,
+) -> Result<ProofTuple<F, C, D>> {
     let mut builder = CircuitBuilder::<F, D>::new(config.clone());
-    
+
     let merkle_root_target = builder.add_virtual_hash();
     builder.register_public_inputs(&merkle_root_target.elements);
     let nullifier_target = builder.add_virtual_hash();
@@ -148,9 +149,13 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
     let public_key_index_bits_target = builder.split_le(public_key_index_target, tree_height());
     let zero_target = builder.zero();
     let neg_one_target = builder.neg_one();
-    
+
     builder.verify_merkle_proof::<PoseidonHash>(
-        [private_key_target, [zero_target, zero_target, zero_target, rln_target]].concat(),
+        [
+            private_key_target,
+            [zero_target, zero_target, zero_target, rln_target],
+        ]
+        .concat(),
         &public_key_index_bits_target,
         merkle_root_target,
         &merkle_proof_target,
@@ -160,7 +165,10 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
     let should_be_nullifier_target =
         builder.hash_n_to_hash_no_pad::<PoseidonHash>([private_key_target, topic_target].concat());
     for i in 0..4 {
-        builder.connect(nullifier_target.elements[i], should_be_nullifier_target.elements[i]);
+        builder.connect(
+            nullifier_target.elements[i],
+            should_be_nullifier_target.elements[i],
+        );
     }
 
     let should_be_new_rln_target = builder.add(rln_target, neg_one_target);
@@ -168,10 +176,18 @@ fn semaphore_proof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, con
     builder.range_check(new_rln_target, 32);
 
     // Check new leaf.
-    let should_be_new_leaf_target =
-        builder.hash_n_to_hash_no_pad::<PoseidonHash>([private_key_target, [zero_target, zero_target, zero_target, new_rln_target]].concat());
+    let should_be_new_leaf_target = builder.hash_n_to_hash_no_pad::<PoseidonHash>(
+        [
+            private_key_target,
+            [zero_target, zero_target, zero_target, new_rln_target],
+        ]
+        .concat(),
+    );
     for i in 0..4 {
-        builder.connect(new_leaf_target.elements[i], should_be_new_leaf_target.elements[i]);
+        builder.connect(
+            new_leaf_target.elements[i],
+            should_be_new_leaf_target.elements[i],
+        );
     }
 
     let data = builder.build::<C>();
@@ -217,20 +233,53 @@ fn recursive_proof<
 where
     InnerC::Hasher: AlgebraicHasher<F>,
 {
-    let (inner_proof1, inner_vd1, inner_cd1) = inner1;
-    let (inner_proof2, inner_vd2, inner_cd2) = inner2;
-
     let mut builder = CircuitBuilder::<F, D>::new(config.clone());
-    let pt1 = builder.add_virtual_proof_with_pis::<InnerC>(inner_cd1);
-    let pt2 = builder.add_virtual_proof_with_pis::<InnerC>(inner_cd2);
+    let mut pw = PartialWitness::new();
 
-    let inner_data = VerifierCircuitTarget {
-        constants_sigmas_cap: builder.add_virtual_cap(inner_cd1.config.fri_config.cap_height),
-        circuit_digest: builder.add_virtual_hash(),
-    };
+    {
+        let (inner_proof, inner_vd, inner_cd) = inner1;
+        let pt = builder.add_virtual_proof_with_pis::<InnerC>(inner_cd);
+        pw.set_proof_with_pis_target(&pt, inner_proof);
 
-    builder.verify_proof::<InnerC>(&pt1, &inner_data, inner_cd1);
-    builder.verify_proof::<InnerC>(&pt2, &inner_data, inner_cd2);
+        let inner_data = VerifierCircuitTarget {
+            constants_sigmas_cap: builder.add_virtual_cap(inner_cd.config.fri_config.cap_height),
+            circuit_digest: builder.add_virtual_hash(),
+        };
+        pw.set_cap_target(
+            &inner_data.constants_sigmas_cap,
+            &inner_vd.constants_sigmas_cap,
+        );
+        pw.set_hash_target(inner_data.circuit_digest, inner_vd.circuit_digest);
+
+        builder.register_public_inputs(inner_data.circuit_digest.elements.as_slice());
+        for i in 0..builder.config.fri_config.num_cap_elements() {
+            builder.register_public_inputs(&inner_data.constants_sigmas_cap.0[i].elements);
+        }
+        builder.verify_proof::<InnerC>(&pt, &inner_data, inner_cd);
+    }
+
+    {
+        let (inner_proof, inner_vd, inner_cd) = inner2;
+        let pt = builder.add_virtual_proof_with_pis::<InnerC>(inner_cd);
+        pw.set_proof_with_pis_target(&pt, inner_proof);
+
+        let inner_data = VerifierCircuitTarget {
+            constants_sigmas_cap: builder.add_virtual_cap(inner_cd.config.fri_config.cap_height),
+            circuit_digest: builder.add_virtual_hash(),
+        };
+        pw.set_hash_target(inner_data.circuit_digest, inner_vd.circuit_digest);
+        pw.set_cap_target(
+            &inner_data.constants_sigmas_cap,
+            &inner_vd.constants_sigmas_cap,
+        );
+
+        builder.register_public_inputs(inner_data.circuit_digest.elements.as_slice());
+        for i in 0..builder.config.fri_config.num_cap_elements() {
+            builder.register_public_inputs(&inner_data.constants_sigmas_cap.0[i].elements);
+        }
+        builder.verify_proof::<InnerC>(&pt, &inner_data, inner_cd);
+    }
+
     builder.print_gate_counts(0);
 
     if let Some(min_degree_bits) = min_degree_bits {
@@ -245,12 +294,6 @@ where
     }
 
     let data = builder.build::<C>();
-
-    let mut pw = PartialWitness::new();
-    pw.set_proof_with_pis_target(&pt1, inner_proof1);
-    pw.set_verifier_data_target(&inner_data, inner_vd1);
-    pw.set_proof_with_pis_target(&pt2, inner_proof2);
-    pw.set_verifier_data_target(&inner_data, inner_vd2);
 
     let mut timing = TimingTree::new("prove", Level::Debug);
     let proof = prove(&data.prover_only, &data.common, pw, &mut timing)?;
@@ -1198,14 +1241,18 @@ fn test_serialization<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, 
     Ok(())
 }
 
-fn benchmark(config: &CircuitConfig, zk_config: &CircuitConfig, log2_inner_size: usize) -> Result<()> {
+fn benchmark(
+    config: &CircuitConfig,
+    zk_config: &CircuitConfig,
+    log2_inner_size: usize,
+) -> Result<()> {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = GoldilocksField;
-    
+
     // CREATE TREE WITH 2^n leaves
     let n = 1 << tree_height();
-    let private_keys: Vec<[F;4]> = (0..n).map(|_| F::rand_array()).collect();
+    let private_keys: Vec<[F; 4]> = (0..n).map(|_| F::rand_array()).collect();
     let rlns: Vec<F> = (0..n).map(|_| F::ONE).collect();
     let public_keys: Vec<Vec<F>> = private_keys
         .iter()
@@ -1223,7 +1270,15 @@ fn benchmark(config: &CircuitConfig, zk_config: &CircuitConfig, log2_inner_size:
     let merkle_proof1 = merkle_tree.prove(1);
     let topic1: [GoldilocksField; 4] = F::rand_array();
     let nullifier1 = PoseidonHash::hash_no_pad(&[private_keys[1], topic1].concat()).elements;
-    let inner1 = semaphore_proof(zk_config, private_keys[1], rlns[1], topic1, 1, merkle_proof1, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner1 = semaphore_proof(
+        zk_config,
+        private_keys[1],
+        rlns[1],
+        topic1,
+        1,
+        merkle_proof1,
+        merkle_root_value,
+    )?; //dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd1) = &inner1;
     info!(
         "Initial proof 1 degree {} = 2^{}",
@@ -1234,8 +1289,16 @@ fn benchmark(config: &CircuitConfig, zk_config: &CircuitConfig, log2_inner_size:
     let merkle_proof2 = merkle_tree.prove(2);
     let topic2: [GoldilocksField; 4] = F::rand_array();
     let nullifier2 = PoseidonHash::hash_no_pad(&[private_keys[2], topic2].concat()).elements;
-    let inner2 = semaphore_proof(zk_config, private_keys[2], rlns[2], topic1, 2, merkle_proof2, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
-    //let inner2 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner2 = semaphore_proof(
+        zk_config,
+        private_keys[2],
+        rlns[2],
+        topic1,
+        2,
+        merkle_proof2,
+        merkle_root_value,
+    )?; //dummy_proof::<F, C, D>(config, log2_inner_size)?;
+        //let inner2 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd2) = &inner2;
     info!(
         "Initial proof 2 degree {} = 2^{}",
@@ -1256,7 +1319,15 @@ fn benchmark(config: &CircuitConfig, zk_config: &CircuitConfig, log2_inner_size:
     let topic3: [GoldilocksField; 4] = F::rand_array();
     //let inner3 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let nullifier3 = PoseidonHash::hash_no_pad(&[private_keys[3], topic3].concat()).elements;
-    let inner3 = semaphore_proof(zk_config, private_keys[3], rlns[3], topic1, 3, merkle_proof3, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner3 = semaphore_proof(
+        zk_config,
+        private_keys[3],
+        rlns[3],
+        topic1,
+        3,
+        merkle_proof3,
+        merkle_root_value,
+    )?; //dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd3) = &inner3;
     info!(
         "Initial proof 3 degree {} = 2^{}",
@@ -1267,8 +1338,16 @@ fn benchmark(config: &CircuitConfig, zk_config: &CircuitConfig, log2_inner_size:
     let merkle_proof4 = merkle_tree.prove(4);
     let topic4: [GoldilocksField; 4] = F::rand_array();
     let nullifier4 = PoseidonHash::hash_no_pad(&[private_keys[4], topic1].concat()).elements;
-    let inner4 = semaphore_proof(zk_config, private_keys[4], rlns[4], topic4, 4, merkle_proof4, merkle_root_value)?;//dummy_proof::<F, C, D>(config, log2_inner_size)?;
-    //let inner4 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
+    let inner4 = semaphore_proof(
+        zk_config,
+        private_keys[4],
+        rlns[4],
+        topic4,
+        4,
+        merkle_proof4,
+        merkle_root_value,
+    )?; //dummy_proof::<F, C, D>(config, log2_inner_size)?;
+        //let inner4 = dummy_proof::<F, C, D>(config, log2_inner_size)?;
     let (_, _, cd4) = &inner4;
     info!(
         "Initial proof 4 degree {} = 2^{}",
@@ -1345,7 +1424,7 @@ fn main() -> Result<()> {
     let threads = options.threads.unwrap_or(num_cpus..=num_cpus);
 
     let config = CircuitConfig::standard_recursion_config();
-    let zk_config = CircuitConfig::standard_recursion_zk_config();
+    let zk_config = CircuitConfig::standard_recursion_config();
     for log2_inner_size in options.size {
         // Since the `size` is most likely to be and unbounded range we make that the outer iterator.
         for threads in threads.clone() {
